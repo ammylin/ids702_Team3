@@ -54,7 +54,7 @@ for year in range(2015, 2020):
 combined = pd.concat(dfs, ignore_index=True)
 
 combined = combined.drop(columns=["Family", "Trust (Government Corruption)", 
-                                  "Lower Confidence Interval", "Upper Confidence Interval", "Whisker.high", "Whisker.low",], errors="ignore")
+                                  "Lower Confidence Interval", "Upper Confidence Interval", "Whisker.high", "Whisker.low","Happiness Rank", "Standard Error", "Dystopia Residual", "Region"], errors="ignore")
 
 out_path = Path("data") / "2015_2019_combined.csv"
 combined.to_csv(out_path, index=False)
