@@ -1,0 +1,122 @@
+---
+title: "Global Happiness Analysis"
+subtitle: "Arvind Kandala, Ammy Lin, Lingyue Hao, Shelly Cao"
+execute:
+  echo: false
+  message: false
+  warning: false
+editor: visual
+format: pdf
+---
+
+## Load data
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(broom)
+library(knitr)
+
+
+happiness <- read.csv("https://github.com/lingyuehao/ids702_Team3/raw/refs/heads/main/data/2015_2019_combined.csv")
+
+happiness <- happiness %>%
+rename(
+country = Country,
+region = Region,
+rank = Happiness.Rank,
+score = Happiness.Score,
+se_score = Standard.Error,
+gdp_index = Economy..GDP.per.Capita.,
+lifeexp_index = Health..Life.Expectancy.,
+freedom_index = Freedom,
+generosity_index = Generosity,
+dystopia_index = Dystopia.Residual,
+year = Year
+)
+
+glimpse(happiness)
+head(happiness)
+
+
+```
+
+### **Research Question 1: Life Expectancy, GDP, and Happiness**
+
+Is there a significant association between life expectancy and national happiness, after adjusting for GDP per capita?
+
+### **Model Specification:**
+
+We fit a multiple linear regression model with a national happiness score as the outcome; a linear regression model is appropriate here because the outcome (happiness score) is continuous and approximately normally distributed. The linear model relies on several core assumptions: (1) the relationship between predictors and the outcome is linear, (2) residuals have constant variance across fitted values, (3) residuals are independent, and (4) residuals are approximately normally distributed. 
+
+The formal model is specified as follows:
+
+$$
+\text{Score}_i = \beta_0 + \beta_1(\text{LifeExp}_i) + \beta_2(\text{GDP}_i) + \beta_3(\text{LifeExp}_i \times \text{GDP}_i) + \epsilon_i
+$$
+
+Life expectancy index and GDP index were included as primary predictors, and we added an interaction between them to explore whether the association between life expectancy and happiness varies depending on a country’s economic status. Including the interaction allowed us to more fully capture the relationship between these two structural indicators while controlling for potential confounding between them. Put another way, the interaction between life expectancy and GDP per capita was included because the relationship between health outcomes and happiness is likely to differ depending on a country's level of economic development. Wealthier countries may benefit more from additional life expectancy gains due to differences in healthcare quality, social safety nets, or elderly well-being.
+
+GDP was included as a covariate because it is plausibly associated with both happiness and life expectancy, making it a potential confounder. Excluding it would risk overstating the independent contribution of life expectancy to national happiness. Additional unmeasured confounders, such as education levels or political stability, should be acknowledged as possible sources of residual bias. 
+
+```{r}
+rq1_model1 <- lm(
+  score ~ lifeexp_index * gdp_index,
+  data = happiness
+)
+
+coef_df <- summary(rq1_model1)$coefficients
+
+rq1_table <- tidy(rq1_model1, conf.int = TRUE) %>%
+select(term, estimate, std.error, statistic, p.value, conf.low, conf.high) %>%
+mutate(term = recode(
+term,
+"(Intercept)" = "Intercept",
+"lifeexp_index" = "Life expectancy index",
+"gdp_index" = "GDP per capita index",
+"lifeexp_index:gdp_index" = "Life expectancy × GDP per capita"
+),
+
+p.value = ifelse(p.value < 0.001, "<0.001",
+sprintf("%.3f", round(p.value, 3)))
+)
+
+
+colnames(rq1_table) <- c("Variable", "Estimate", "Std Error", "t-value", "p-value",  "Lower 95% CI", "Upper 95% CI")
+
+kable(
+rq1_table,
+caption = "Linear regression model for national happiness",
+digits = 3,
+booktabs = TRUE,
+linesep = "",
+align = c("l", "c", "c", "c", "c", "c", "c")
+)
+```
+
+From Table 1, we see that GDP per capita remains the strongest predictor of national happiness after controlling for life expectancy. Its coefficient is fairly large (≈ 0.63) and highly significant (p \< 0.001), and the 95% confidence interval \[0.302, 0.966\] excludes zero. This indicates a robust positive association: countries with higher GDP per capita consistently report higher levels of happiness, even after adjusting for differences in life expectancy. 
+
+In contrast, the main effect for life expectancy is small (≈ 0.21) and not statistically significant (p = 0.425). Its 95% confidence interval spans both negative and positive values \[–0.299, 0.708\], which suggests that life expectancy alone is not clearly associated with happiness once GDP per capita has been taken into account. This suggests that longevity, by itself, may not meaningfully affect self-reported well-being in the absence of any economic context.
+
+However, the interaction term between life expectancy and GDP per capita (≈ 1.50, p \< 0.001) is positive, large, and statistically strong. Its confidence interval \[1.008, 1.990\] is above zero, indicating a reliably positive interaction. This means that the relationship between life expectancy and happiness becomes substantially stronger in higher-income countries. In practical terms, living longer appears to contribute more to national happiness in places where economic conditions are already favorable; thus, increases in longevity translate into higher well-being when supported by adequate economic resources, social infrastructure, and living standards.
+
+### **Model Assessment:**
+
+```{r}
+par(mfrow = c(2,2),         
+    mar = c(4,4,2,1),      
+    cex = 0.9,              
+    cex.axis = 0.9,         
+    cex.lab = 0.9,          
+    cex.main = 1.1)      
+
+plot(rq1_model1)
+```
+
+We assessed the model using standard diagnostic plots. Based on the four diagnostic plots for our linear model, all of the assumptions are reasonably supported, although a few areas need caution. The residuals-versus-fitted plot shows points scattered fairly evenly around zero without a strong pattern, which suggests that the linearity assumption is mostly acceptable. The Q–Q plot is fairly close to the 45-degree line, especially in the center of the distribution, so the normality assumption is not perfect—there is some deviation in the tails—but the overall pattern is still acceptable for a model of this size. The scale–location plot shows a generally horizontal trend, but with some spread increasing slightly at higher fitted values, which hints at mild heteroskedasticity, though not severe enough to invalidate the model. Finally, the residuals-versus-leverage plot identifies a few observations with higher leverage (for example, points around leverage \> 0.02), but none clearly exceed Cook’s distance, so influential points do not appear to be a major issue. 
+
+Because model diagnostics showed only mild heteroskedasticity and no strongly influential points, no adjustments (e.g., variable transformation or robust standard errors) were made. The model was retained in its original form. Additionally, the model explains a substantial portion of the variation in national happiness (Adjusted R² = 0.6762), indicating that nearly 68% of the differences in happiness across countries can be accounted for by life expectancy, GDP per capita, and their interaction.
+
+```{r}
+summary(rq1_model1)
+```
