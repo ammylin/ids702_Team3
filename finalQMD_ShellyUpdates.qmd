@@ -13,7 +13,8 @@ format:
     mainfont: "Times New Roman"
     sansfont: "Times New Roman"
     monofont: "Times New Roman"
-    fontsize: 12pt  
+    fontsize: 12pt
+    geometry: "margin=0.9in"
 ---
 
 ```{r}
@@ -73,7 +74,7 @@ For regional happiness, the results indicate that the relationship between regio
 
 ## **Interpretation and Implications**
 
-```{r, fig.cap = "Observed Happiness and Modelled Interaction between Life Expectancy and GDP",fig.width = 5, fig.height = 3}
+```{r, fig.cap = "Observed Happiness and Modelled Interaction between Life Expectancy and GDP",fig.width = 4, fig.height = 2}
 rq1_model <- lm(
   score ~ lifeexp_index * gdp_index +
     lifeexp_index * year +
