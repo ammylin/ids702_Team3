@@ -350,10 +350,6 @@ We also explored including interactions with year (e.g., Freedom × Year, Genero
 
 ```
 
-
-
 ```{r}
 
 ```
-
-

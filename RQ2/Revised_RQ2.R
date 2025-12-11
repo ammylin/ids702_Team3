@@ -1,3 +1,14 @@
+---
+  title: "Global Happiness Analysis"
+subtitle: "Arvind Kandala, Ammy Lin, Lingyue Hao, Shelly Cao"
+execute:
+  echo: false
+message: false
+warning: false
+editor: visual
+format: pdf
+---
+
 library(MASS)
 library(dplyr)
 library(caret)
