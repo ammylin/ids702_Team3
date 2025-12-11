@@ -134,7 +134,6 @@ ggplot() +
     fill = "grey70", alpha = 0.15
   ) +
   scale_colour_viridis_c() +
-  theme_minimal() +
   labs(
     title    = "Observed Happiness and Modelled Interaction between Life Expectancy and GDP",
     subtitle = "Fitted lines represent predictions at the 10th, 50th, and 90th percentiles of the GDP index",
@@ -142,8 +141,11 @@ ggplot() +
     y        = "Happiness score (observed)",
     colour   = "GDP index (observed)",
     linetype = "GDP index level"
+  ) +
+  theme_bw(base_size = 8, base_family = "serif") +
+  theme(
+    plot.title = element_text(face = "bold")
   )
-
 
 ```
 
@@ -287,11 +289,11 @@ kable(
  
 ```
 
-The main effect coefficients in Table 1, such as −341.91 for life expectancy and 324.23 for GDP per capita, appear numerically large because, in a model that includes interaction terms, each main effect represents the estimated association when all interacting variables are equal to 0. In this dataset, such zero values do not occur. The life expectancy and GDP indices are constructed relative to a dystopia reference point and never take the value 0, and the year variable ranges from 2015 to 2019 rather than approaching 0. As a result, the main effect coefficients reflect values at hypothetical predictor combinations outside the empirical data range. They are therefore not meaningful in isolation, and interpretation must instead focus on the interaction terms that determine the estimated relationships within the actual values observed in the dataset.
+The main effect coefficients in Table 1, such as −341.906 for life expectancy and 324.225 for GDP per capita, appear numerically large because, in a model that includes interaction terms, each main effect represents the estimated association when all interacting variables are equal to 0. In this dataset, such zero values do not occur. The life expectancy and GDP indices are constructed relative to a dystopia reference point and never take the value 0, and the year variable ranges from 2015 to 2019 rather than approaching 0. As a result, the main effect coefficients reflect values at hypothetical predictor combinations outside the empirical data range. They are therefore not meaningful in isolation, and interpretation must instead focus on the interaction terms that determine the estimated relationships within the actual values observed in the dataset.
 
-The interaction terms provide the relevant information for understanding how the association between life expectancy and happiness depends on economic level and time period. The interaction between life expectancy and GDP per capita has an estimated coefficient of 1.195 with a p-value of 0.01 and a confidence interval from 0.24 to 2.15, indicating that the estimated association between life expectancy and happiness becomes stronger at higher GDP levels. The interaction between life expectancy and year shows a similar pattern. Its estimated coefficient is 0.17 with a p-value of 0.04 and a confidence interval from 0.01 to 0.33. Within the observed period from 2015 to 2019, the model therefore estimates an increasing association between life expectancy and happiness across successive years. These two interactions confirm that the effect of life expectancy cannot be summarized by a single slope and varies across both GDP per capita and year.
+The interaction terms provide the relevant information for understanding how the association between life expectancy and happiness depends on economic level and time period. The interaction between life expectancy and GDP per capita has an estimated coefficient of 1.195 with a p-value of 0.014 and a confidence interval from 0.242 to 2.148, indicating that the estimated association between life expectancy and happiness becomes stronger at higher GDP levels. The interaction between life expectancy and year shows a similar pattern. Its estimated coefficient is 0.170 with a p-value of 0.043 and a confidence interval from 0.005 to 0.334. Within the observed period from 2015 to 2019, the model therefore estimates an increasing association between life expectancy and happiness across successive years. These two interactions confirm that the effect of life expectancy cannot be summarized by a single slope and varies across both GDP per capita and year.
 
-Additional covariates also contribute to explaining variation in happiness. The family index and freedom index have statistically significant positive coefficients of 0.89 and 1.48, respectively, indicating that they account for meaningful differences in happiness scores after conditioning on all other predictors. Trust and generosity are not statistically significant in this specification, as their confidence intervals include 0. Overall model fit is strong, with an R-squared of 0.781 and an adjusted R-squared of 0.778, indicating that the model explains a substantial portion of the variation in national happiness.
+Additional covariates also contribute to explaining variation in happiness. The family index and freedom index have statistically significant positive coefficients of 0.890 and 1.480, respectively, indicating that they account for meaningful differences in happiness scores after conditioning on all other predictors. Trust and generosity are not statistically significant in this specification, as their confidence intervals include 0. Overall model fit is strong, with an R-squared of 0.781 and an adjusted R-squared of 0.778, indicating that the model explains a substantial portion of the variation in national happiness.
 
 ### **Model Assessment:**
 
@@ -573,7 +575,12 @@ ggeffects::predict_response(
     color = "Freedom Index",
     fill  = "Freedom Index"
   ) +
-  theme_bw(base_size = 14)
+  theme_bw(base_size = 8,base_family = "serif") +
+  theme(
+    text = element_text( size = 8),
+    plot.title = element_text(face = "bold")
+  )
+
 ```
 
 The plot illustrates a consistent interaction pattern: for the Low happiness group, higher generosity is associated with decreasing predicted probabilities across all freedom levels, although the decline is steeper when freedom is lower. This means that for countries in the Low happiness group, generosity decreases the log odds of being in the Low happiness group, and this effect is strongest in places with a low level of freedom. For the Medium group, increasing generosity raises the predicted probability of classification into this category, and the effect is strongest at lower levels of freedom. The High happiness group shows small but positive changes in predicted probability as generosity increases, with the three freedom levels producing broadly comparable trends. Although the magnitude of change is modest for the High group, the general pattern reinforces that generosity behaves differently depending on both the level of freedom and the baseline happiness classification. These curves’ slopes support the previous assertion that generosity has the highest impact on probabilities of being in a specific happiness group when freedom is lower.
