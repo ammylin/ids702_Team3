@@ -1,0 +1,656 @@
+---
+title: "Global Happiness Analysis"
+subtitle: "Arvind Kandala, Ammy Lin, Lingyue Hao, Shelly Cao"
+execute:
+  echo: false
+  message: false
+  warning: false
+editor: visual
+
+format:
+  pdf:
+    pdf-engine: xelatex
+    mainfont: "Times New Roman"
+    sansfont: "Times New Roman"
+    monofont: "Times New Roman"
+    fontsize: 12pt
+    geometry: "margin=0.9in"
+---
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(broom)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(lmtest)
+library(sandwich)
+library(tidyr)
+library(car)
+library(MASS)
+library(caret)
+library(ggeffects)
+
+happiness <- read.csv("https://github.com/lingyuehao/ids702_Team3/raw/refs/heads/main/data/2015_2019_combined_updated.csv")
+
+happiness <- happiness %>%
+  rename(
+    country          = Country,
+    region           = Region,
+    score            = Happiness.Score,
+    gdp_index        = Economy..GDP.per.Capita.,
+    family_index     = Family,
+    lifeexp_index    = Health..Life.Expectancy.,
+    freedom_index    = Freedom,
+    trust_index      = Trust..Government.Corruption.,
+    generosity_index = Generosity,
+    year             = Year
+  )
+
+```
+
+# *Data Science Memo*
+
+The primary stakeholder for this memo is the Administrator of the United Nations Development Program (UNDP), who oversees global development strategy and the prioritization of international aid packages. This stakeholder is well-versed in core metrics like those in the World Happiness Report, but does not work directly with complex statistical interaction modeling. As such, they require clear strategic interpretations rather than technical detail. They care about this analysis because understanding whether the drivers of happiness are strictly dependent on economic and political prerequisites can help determine whether aid resources should be shifted toward foundational stabilization before funding broader health and social wellness initiatives.
+
+## **Executive Summary**
+
+Global policy institutions increasingly prioritize population well-being, yet the structural factors that drive national happiness remain only partly understood. This analysis draws from The World Happiness Report, which aggregates responses from the Gallup World Poll to measure subjective well-being. These responses are based on the Cantril ladder question, which asks respondents to rate their current lives on a scale of 0 (worst) to 10 (best). While the report identifies GDP per capita and healthy life expectancy (both measured as indices rather than raw dollars or years), freedom to make life choices, generosity, and social support as major contributors to global differences in life satisfaction, the ways these factors interact are still not fully resolved (World Happiness Report, 2024). Similarly, cross-country analyses compiled by Our World in Data show that both economic and health conditions are strongly associated with national well-being, underscoring the need for models that evaluate their combined effects (Roser & Ortiz-Ospina, 2024). To investigate these relationships, we employ two models: first, a multiple linear regression testing whether the relationship between life expectancy and national happiness depends on GDP per capita; and second, an ordinal logistic regression assessing whether a country’s levels of generosity and freedom are associated with an increased probability of belonging to a higher regional happiness group. Specifically, generosity is defined as the national average share of people who answered yes to having donated money to a charity in the past month (Helliwell et al., 2025). 
+
+Our analysis reveals that the drivers of happiness depend heavily on structural context. We find that economic stability acts as a prerequisite for the benefits of public health: extending life expectancy significantly boosts national happiness only in nations with high GDP per capita, whereas in lower-income settings, longer lives do not translate into higher reported well-being. Additionally, we find that the generosity–happiness relationship is conditional. Generosity is most strongly associated with higher regional happiness when freedom is relatively low, and other factors become more important as freedom increases. Consequently, we recommend that you view economic development and social capital as the necessary foundations required to extract maximum well-being benefits of healthcare improvements as a nation continues to develop.
+
+## **Decisions To Be Made**
+
+As the UNDP Administrator, you face a critical decision regarding the prioritization of aid packages: should you approve funding for broad health and social programs in developing nations, or divert those resources toward foundational economic and political stabilization? Specifically, you must determine whether to shift resources toward initiatives that extend life expectancy, given our analysis of its association with national happiness after adjusting for GDP per capita, and consider how your promotion of civil liberties and charitable incentives impacts happiness. 
+
+When reviewing our findings, we suggest you adopt a "hierarchy of needs" approach. Since our data indicate that longevity yields diminishing returns on happiness in low-GDP contexts, we advise directing immediate funding in developing regions toward economic stabilization and infrastructure as the necessary foundation for future health benefits. Because generosity shows the largest association with improved regional happiness at lower freedom levels, the UNDP should not delay prosocial program development until after political liberalization. In restrictive settings, devote efforts to governance work and local social-capital interventions such as community mutual-aid channels and non-profit organizations. In contrast, for nations that have already secured these economic and political baselines, marginal returns to generosity incentives appear smaller, so shifting resources toward preventive health initiatives and institutions will yield the highest return on national well-being.
+
+## **Key Findings**
+
+The regression results indicate that several factors are meaningfully associated with national happiness, with GDP per capita, family support, and freedom showing the most robust positive coefficients in the full model. Although the main effect of life expectancy alone cannot be interpreted in isolation due to the presence of interaction terms, the significant positive interaction between life expectancy and GDP suggests that the relationship between longevity and happiness depends on a country’s economic conditions. In particular, increases in life expectancy correspond to larger gains in happiness in higher-GDP countries, whereas the association is substantially weaker in lower-GDP contexts.
+
+For regional happiness, the results indicate that the relationship between regional happiness and generosity depends critically on the level of freedom within a region. Generosity does not exert a uniform influence; instead, its association with regional well-being is strongest when freedom is relatively low. In low-freedom contexts, increases in generosity are linked to substantially higher probabilities of belonging to a happier regional group. However, as freedom levels rise, the positive effect of generosity diminishes and can even become negative. This pattern highlights that generosity’s contribution to regional happiness is conditional rather than universal, and that its influence is shaped by the broader institutional environment in which it occurs.
+
+## **Interpretation and Implications**
+
+```{r, fig.cap = "Observed Happiness and Modelled Interaction between Life Expectancy and GDP",fig.width = 5, fig.height = 3}
+rq1_model <- lm(
+  score ~ lifeexp_index * gdp_index +
+    lifeexp_index * year +
+    gdp_index * year +
+    family_index +
+    freedom_index +
+    trust_index +
+    generosity_index +
+    year,
+  data = happiness
+)
+
+gdp_q <- quantile(happiness$gdp_index, c(0.10, 0.50, 0.90), na.rm = TRUE)
+
+gdp_levels <- c(
+  "Low GDP"     = gdp_q[1],  
+  "Median GDP"  = gdp_q[2],   
+  "High GDP"    = gdp_q[3]   
+)
+
+life_exp_range <- seq(
+  min(happiness$lifeexp_index, na.rm = TRUE),
+  max(happiness$lifeexp_index, na.rm = TRUE),
+  length.out = 120
+)
+
+plot_data <- lapply(names(gdp_levels), function(level_name) {
+  data.frame(
+    lifeexp_index    = life_exp_range,
+    gdp_index        = gdp_levels[[level_name]],
+    GDP_Level        = level_name,
+    family_index     = mean(happiness$family_index, na.rm = TRUE),
+    freedom_index    = mean(happiness$freedom_index, na.rm = TRUE),
+    trust_index      = mean(happiness$trust_index, na.rm = TRUE),
+    generosity_index = mean(happiness$generosity_index, na.rm = TRUE),
+    year             = mean(happiness$year, na.rm = TRUE)
+  )
+}) |> bind_rows()
+
+preds <- predict(rq1_model, newdata = plot_data, interval = "confidence")
+plot_data <- cbind(plot_data, preds)
+
+ggplot() +
+  geom_point(
+    data = happiness,
+    aes(x = lifeexp_index, y = score, colour = gdp_index),
+    alpha = 0.5, size = 1.4
+  ) +
+  geom_line(
+    data = plot_data,
+    aes(x = lifeexp_index, y = fit, linetype = GDP_Level),
+    linewidth = 1.2,
+    colour = "black"
+  ) +
+  geom_ribbon(
+    data = plot_data,
+    aes(x = lifeexp_index, ymin = lwr, ymax = upr, group = GDP_Level),
+    fill = "grey70", alpha = 0.15
+  ) +
+  scale_colour_viridis_c() +
+  labs(
+    title    = "Observed Happiness and Modelled Interaction between Life Expectancy and GDP",
+    subtitle = "Fitted lines represent predictions at the 10th, 50th, and 90th percentiles of the GDP index",
+    x        = "Life expectancy index",
+    y        = "Happiness score (observed)",
+    colour   = "GDP index (observed)",
+    linetype = "GDP index level"
+  ) +
+  theme_bw(base_size = 8, base_family = "serif") +
+  theme(
+    plot.title = element_text(face = "bold")
+  )
+
+```
+
+Figure 1 above presents the observed relationship between the life expectancy index and national happiness, together with fitted regression lines that illustrate the estimated interaction between life expectancy and GDP. The horizontal axis displays the life expectancy component from the World Happiness Report. This variable is not measured in years; rather, it is a 0 to approximately 1.03 scaled index representing how much a country’s life expectancy exceeds the report’s Dystopia benchmark—a hypothetical minimum reference level used across all countries.
+
+The vertical axis reports the observed happiness score, which ranges from 0 to 10. Each point corresponds to a country–year observation, and its colour shows the observed value of the GDP component index. Similar to life expectancy, the GDP index is not GDP per capita in dollars. Instead, it is a 0 to approximately 1.7 scaled measure indicating how far a country’s GDP per capita lies above the shared Dystopia baseline. The World Happiness methodology transforms GDP per capita into this index to make all component scores comparable on a common scale.
+
+Superimposed on the scatterplot are three fitted regression lines representing predicted happiness at the 10th, 50th, and 90th percentiles of the GDP index, while all other covariates (family, freedom, trust, generosity, and year) are held at their mean levels. These lines summarize the interaction estimated in the regression model. The fitted line at the 90th percentile of the GDP index has the steepest positive slope, indicating that increases in the life expectancy index are associated with larger increases in predicted happiness when GDP is relatively high. In contrast, the fitted line at the 10th percentile is noticeably flatter, showing that improvements in the life expectancy index correspond to smaller predicted increases in happiness when GDP levels are low.
+
+The key implication is that economic stability acts as a prerequisite multiplier for public health investments. The impact of longevity is not consistent across borders; it relies heavily on the surrounding economic environment. If you focus country programming solely on extending life expectancy in developing regions, you may struggle to improve national happiness scores unless you pair them with initiatives that strengthen the economic safety net and social support systems.
+
+## **Recommendations**
+
+With these results in mind, we recommend that future aid packages be structured around the following conditional frameworks:
+
+1.  Pair health improvements with more general economic support, particularly in poorer settings. Our findings indicate that longevity contributes little to happiness if economic conditions remain limited.
+2.  Establish continuous monitoring of the interaction between income and health, as their combined influence on national happiness has proven to be dynamic rather than static over the observed period.
+3.  Pursue strengthening prosocial or community-based initiatives without delay even if expanding civil and personal freedoms appears to be a more pressing concern. The prosocial programs will improve well-being while providing citizens with a workable base of resources that allow them to be more productive as the civil liberties of the nation increase. Furthermore, the model indicates that generosity has a much stronger positive association with happiness in contexts where individuals have lower autonomy.
+
+## **Conclusion**
+
+Global policy institutions often treat the drivers of happiness in isolation, yet our analysis demonstrates that these factors operate within a rigid structural hierarchy. We found that "higher-order" well-being investments, such as extending life expectancy, only yield significant happiness returns in nations that have already secured the foundational prerequisites of economic stability, while prosocial programs serve best in nations with developing political liberties. Consequently, we advise that you adopt a "hierarchy of needs" decision framework: prioritizing economic infrastructure and social capital in developing regions with lower autonomy, while shifting focus to preventive health in wealthier, freer nations. This tiered approach is critical to ensuring that limited resources are not wasted on interventions that the current structural environment cannot yet support.
+
+\newpage
+
+# *Technical Appendix*
+
+## **Data**
+
+The World Happiness Report is a benchmark that allows us to understand the self-reported well-being of residents of many nations. Collected by Gallup World Poll in the years 2015 through 2019, the data shows the self-reported well-being of citizens across approximately 155 nations. The primary outcome variable is the national average Happiness Score, based on the "Cantril Ladder" survey question. Respondents rate their current lives on a scale from 0 (worst possible life) to 10 (best possible life). The predictor variables—including GDP per capita, family support, healthy life expectancy, freedom, trust (absence of corruption), and generosity—are provided as calculated indices. These are not raw values (e.g., dollars or years) but are scaled relative to a "Dystopia" baseline (the lowest observed values globally). Consequently, these predictors generally range from 0 to approximately 1.7, representing the extent to which a country outperforms the theoretical minimum (Kaggle, 2019).
+
+The raw data included five CSV files, one for each year from 2015 through 2019, that needed to be combined. To do this, a Year column was first added to each dataset to distinguish the observations. The original files used slightly different column names in different years, even when they represented the same underlying quantity. For example, the 2015–2017 files contain variables such as *Happiness Score and Economy (GDP per capita)*, whereas the 2018–2019 files use names like *Score* and *GDP per capita*. As such, a mapping of year-specific names to standardized names was established. For instance, Score was renamed to *Happiness Score* so that all files share the same set of column names in the final dataset.
+
+Another issue encountered was that the 2018 and 2019 files contained columns summarizing uncertainty in the happiness scores, which lacked uniformity and could not be interpreted directly. These were dropped because they were not relevant to the research question at hand, simplifying the model.
+
+## **Model Analyses**
+
+## **Research Question 1**
+
+Is there a significant association between life expectancy and national happiness, after adjusting for GDP per capita, after controlling for family support, freedom, trust in government, generosity, and year?
+
+### **Model Description**
+
+We estimate a multiple linear regression model to study how life expectancy and economic development jointly relate to national happiness. The outcome variable is the country-level happiness score reported in the World Happiness Report, which is constructed relative to a “Dystopia” baseline that represents the lowest observed levels of each well-being component. All component indices, including life expectancy, GDP per capita, family support, freedom, trust, and generosity, take values between 0 and 1 and quantify how far each country lies above this Dystopia reference point. Because the outcome is continuous and the predictors are measured on interval-like scales, a linear regression framework is appropriate. The model relies on the standard assumptions that (1) the conditional relationship between predictors and the outcome is linear, (2) residuals have constant variance across fitted values, (3) residuals are independent across observational units, and (4) residuals are approximately normally distributed.
+
+The primary objective is to examine whether the association between life expectancy and happiness differs across levels of economic development. To address this, the model includes the life expectancy and GDP per capita indices as continuous predictors along with their interaction. In this specification, the individual coefficients on life expectancy and GDP per capita cannot be interpreted as marginal effects; instead, they contribute to a combined effect that depends jointly on both indicators. The interaction term captures whether improvements in life expectancy translate into larger or smaller increases in happiness, depending on a country’s economic conditions.
+
+All remaining available well-being components—family support, freedom, trust, and generosity—are included as covariates to reduce confounding. These factors represent social, institutional, and relational environments that plausibly influence both life expectancy and subjective well-being, and adjusting for them allows the model to better isolate the association of interest. Because the dataset spans multiple time points, the model also includes the survey year as a continuous predictor, along with interactions between year and both life expectancy and GDP per capita.
+
+Since countries contribute repeated observations to the dataset, standard errors are computed using country-level cluster-robust variance estimators. This approach addresses the within-country dependence that would otherwise bias classical standard errors and ensures valid inference even in the presence of serial correlation or heteroskedasticity.
+
+### **Model Results**
+
+```{r}
+
+rq1_model <- lm(
+  score ~ lifeexp_index * gdp_index +
+    lifeexp_index * year +
+    gdp_index * year +
+    family_index +
+    freedom_index +
+    trust_index +
+    generosity_index +
+    year,
+  data = happiness
+)
+
+model_summary <- summary(rq1_model)
+r2_value <- model_summary$r.squared
+adj_r2   <- model_summary$adj.r.squared
+
+cluster_vcov <- sandwich::vcovCL(rq1_model, cluster = ~ country)
+coefs_robust <- lmtest::coeftest(rq1_model, vcov = cluster_vcov)
+
+crit_val <- qt(0.975, df = rq1_model$df.residual)
+
+rq1_table <- data.frame(
+  term      = rownames(coefs_robust),
+  estimate  = coefs_robust[, "Estimate"],
+  std.error = coefs_robust[, "Std. Error"],
+  statistic = coefs_robust[, "t value"],
+  p.value   = coefs_robust[, "Pr(>|t|)"],
+  stringsAsFactors = FALSE
+) %>%
+  mutate(
+    conf.low  = estimate - crit_val * std.error,
+    conf.high = estimate + crit_val * std.error
+  ) %>%
+  mutate(
+    term = dplyr::recode(
+      term,
+      "(Intercept)"              = "Intercept",
+      "lifeexp_index"           = "Life expectancy index",
+      "gdp_index"               = "GDP per capita index",
+      "family_index"            = "Family index",
+      "freedom_index"           = "Freedom index",
+      "trust_index"             = "Trust index",
+      "generosity_index"        = "Generosity index",
+      "year"                    = "Year",
+      "lifeexp_index:gdp_index" = "Life expectancy × GDP per capita",
+      "lifeexp_index:year"      = "Life expectancy × Year",
+      "gdp_index:year"          = "GDP per capita × Year"
+    ),
+    p.value   = ifelse(p.value < 0.001, "<0.001",
+                       sprintf("%.3f", round(p.value, 3))),
+    estimate  = sprintf("%.3f", round(estimate, 3)),
+    std.error = sprintf("%.3f", round(std.error, 3)),
+    statistic = sprintf("%.3f", round(statistic, 3)),
+    conf.low  = sprintf("%.3f", round(conf.low, 3)),
+    conf.high = sprintf("%.3f", round(conf.high, 3))
+  )
+
+rq1_table <- dplyr::bind_rows(
+  rq1_table,
+  tibble::tibble(
+    term      = c("R-squared", "Adjusted R-squared"),
+    estimate  = c(sprintf("%.3f", round(r2_value, 3)),
+                  sprintf("%.3f", round(adj_r2, 3))),
+    std.error = "", statistic = "", p.value = "",
+    conf.low  = "", conf.high = ""
+  )
+)
+
+colnames(rq1_table) <- c(
+  "Variable", "Estimate", "Std Error", "t-value", "p-value",
+  "2.5% CI", "97.5% CI"
+)
+
+rownames(rq1_table) <- NULL
+
+kable(
+  rq1_table,
+  caption = "Linear regression model for national happiness (cluster–robust SEs by country)",
+  booktabs = TRUE,
+  longtable = FALSE,
+  linesep  = "",
+  align    = c("l", "c", "c", "c", "c", "c", "c")
+) %>%
+  kableExtra::kable_styling(full_width = FALSE, font_size = 10)
+
+ 
+```
+
+The main effect coefficients in Table 1, such as −341.906 for life expectancy and 324.225 for GDP per capita, appear numerically large because, in a model that includes interaction terms, each main effect represents the estimated association when all interacting variables are equal to 0. In this dataset, such zero values do not occur. The life expectancy and GDP indices are constructed relative to a dystopia reference point and never take the value 0, and the year variable ranges from 2015 to 2019 rather than approaching 0. As a result, the main effect coefficients reflect values at hypothetical predictor combinations outside the empirical data range. They are therefore not meaningful in isolation, and interpretation must instead focus on the interaction terms that determine the estimated relationships within the actual values observed in the dataset.
+
+The interaction terms provide the relevant information for understanding how the association between life expectancy and happiness depends on economic level and time period. The interaction between life expectancy and GDP per capita has an estimated coefficient of 1.195 with a p-value of 0.014 and a confidence interval from 0.242 to 2.148, indicating that the estimated association between life expectancy and happiness becomes stronger at higher GDP levels. The interaction between life expectancy and year shows a similar pattern. Its estimated coefficient is 0.170 with a p-value of 0.043 and a confidence interval from 0.005 to 0.334. Within the observed period from 2015 to 2019, the model therefore estimates an increasing association between life expectancy and happiness across successive years. These two interactions confirm that the effect of life expectancy cannot be summarized by a single slope and varies across both GDP per capita and year.
+
+Additional covariates also contribute to explaining variation in happiness. The family index and freedom index have statistically significant positive coefficients of 0.890 and 1.480, respectively, indicating that they account for meaningful differences in happiness scores after conditioning on all other predictors. Trust and generosity are not statistically significant in this specification, as their confidence intervals include 0. Overall model fit is strong, with an R-squared of 0.781 and an adjusted R-squared of 0.778, indicating that the model explains a substantial portion of the variation in national happiness.
+
+### **Model Assessment:**
+
+```{r, fig.cap = "Diagnostic plots for the Research Question 1 Linear Model", fig.width=6, fig.height=3, out.width="65%"}
+par(mfrow = c(2,2),
+    mar = c(4,4,2,1),
+    cex = 0.9,
+    cex.axis = 0.9,
+    cex.lab = 0.9,
+    cex.main = 1.1)
+
+plot(rq1_model)
+
+```
+
+```{r}
+vif_initial <- vif(rq1_model)
+ 
+happiness <- happiness %>%
+  mutate(
+    lifeexp_centered = lifeexp_index - mean(lifeexp_index, na.rm = TRUE),
+    gdp_centered = gdp_index - mean(gdp_index, na.rm = TRUE)
+  )
+
+rq1_model_centered <- lm(score ~ lifeexp_centered * gdp_centered, data = happiness)
+
+vif_centered <- vif(rq1_model_centered)
+
+vif_table <- data.frame(
+  Predictor = names(vif_centered),
+  VIF = vif_centered
+)
+```
+
+Model diagnostics indicate that standard regression assumptions are reasonably supported, with some mild caveats. The residuals-versus-fitted plot displays residuals scattered without a strong curved trend, indicating no obvious departure from linearity. While the Q–Q plot shows that residuals follow the theoretical line through the central distribution, noticeable deviations in both tails suggest the data departs from perfect normality at the extremes. Similarly, the scale–location plot reveals a slight increase in variability toward the higher end of fitted values, pointing to mild heteroskedasticity, though no severe systematic change in variance is observed. Finally, the residuals-versus-leverage plot confirms the absence of highly influential outliers, as all points lie well below the Cook’s Distance reference curves.
+
+We also addressed structural multicollinearity caused by the interaction terms. In the initial model, the interaction produced extremely large Variance Inflation Factors (VIFs) because the product term was inherently correlated with its uncentered components. To resolve this, we mean-centered the predictors involved in the interaction before refitting the model. This adjustment removed the artificial linear dependence, reducing the VIFs for the main predictors to approximately 2.68 and 2.67, and the interaction term to 1.15. These values fall well below the conservative threshold of 5, confirming that multicollinearity has been effectively mitigated and the regression coefficients are stable for inference.
+
+## **Research Question 2**
+
+Is a country’s generosity and freedom associated with the likelihood of the country belonging to a region with a higher happiness group, and how do these two factors interact after controlling for GDP, life expectancy, family support, and trust in government?
+
+### Model Description
+
+We fit an ordinal logistic regression model with the regional happiness group as the ordered outcome. To construct this variable, we created a regional happiness grouping based on the average happiness score of each geographic region classified by the dataset (e.g., Western Europe, Latin America and the Caribbean, Eastern Asia). For each region, we computed the mean happiness score across its region and classified these regional averages into Low, Medium, and High categories based on tertile cutoffs.
+
+An ordinal model is appropriate because the outcome categories follow a natural ranking, and the proportional-odds framework allows us to estimate shifts toward higher or lower happiness levels. The model relies on three assumptions: (1) a linear relationship between the predictors and the log-odds of being in a higher category; (2) independence of residuals, addressed here with region-clustered robust standard errors to account for shared regional characteristics and repeated measurement; and (3) the proportional-odds assumption, meaning predictor effects are consistent across the category thresholds.
+
+The model incorporated generosity, freedom, and their interaction to assess whether the association between generosity and regional happiness varies across levels of freedom. This interaction is conceptually motivated: generosity may operate differently in contexts with varying degrees of autonomy and social openness, such that its effects may strengthen or weaken depending on institutional conditions. Freedom is also included as a key covariate because it is plausibly related to both generosity and happiness, and omitting it would risk confounding generosity’s independent effect. To account for broader structural determinants of well-being, we additionally controlled for life expectancy, GDP per capita, family support, trust in government, and year. 
+
+We also explored including interactions with year (e.g., Freedom × Year, Generosity × Year) to parallel the linear specification in Research Question 1, but these models generated extreme coefficients, near-zero standard errors, and implausibly large test statistics. These issues made the ordinal model unstable and the resulting parameters difficult to interpret. For this reason, we retained year as a main-effect control and excluded its interaction terms, while preserving the theoretically grounded Generosity × Freedom interaction that remained stable and meaningful.
+
+### **Model Results**
+
+```{r}
+#Ordinal Regression Model and Robust Standard Errors
+happiness <- happiness %>%
+  filter(
+    !is.na(region),
+    region != "",
+    !is.na(score),
+    !is.na(generosity_index),
+    !is.na(freedom_index),
+    !is.na(family_index),
+    !is.na(trust_index),
+    !is.na(lifeexp_index),
+    !is.na(gdp_index),
+    !is.na(year)
+  )
+
+region_avg <- happiness %>%
+  group_by(region) %>%
+  summarize(
+    avg_happiness = mean(score, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    happy_group_num = ntile(avg_happiness, 3),
+    Region_Happy_Group = case_when(
+      happy_group_num == 1 ~ "Low",
+      happy_group_num == 2 ~ "Medium",
+      happy_group_num == 3 ~ "High"
+    ),
+    Region_Happy_Group = factor(
+      Region_Happy_Group,
+      levels = c("Low", "Medium", "High"),
+      ordered = TRUE
+    )
+  )
+
+happiness_ord <- happiness %>%
+  left_join(
+    region_avg %>% dplyr::select(region, Region_Happy_Group),
+    by = "region"
+  ) %>%
+  filter(!is.na(Region_Happy_Group))
+
+```
+
+```{r}
+rq2_model <- polr(
+  Region_Happy_Group ~ 
+    generosity_index * freedom_index +
+    lifeexp_index +
+    gdp_index +
+    family_index +
+    trust_index +
+    year,
+  data = happiness_ord,
+  Hess = TRUE
+)
+
+vcov_region <- sandwich::vcovCL(rq2_model, cluster = ~ region)
+param_names   <- rownames(vcov_region)
+se_robust_all <- sqrt(diag(vcov_region))
+names(se_robust_all) <- param_names
+
+ctable <- coef(summary(rq2_model))
+se_robust <- se_robust_all[rownames(ctable)]
+z_robust <- ctable[, "Value"] / se_robust
+p_robust <- 2 * (1 - pnorm(abs(z_robust)))
+
+ctable_robust <- cbind(
+  "Value"      = ctable[, "Value"],
+  "Std. Error" = se_robust,
+  "t value"    = z_robust,
+  "p value"    = p_robust
+)
+```
+
+```{r}
+#Coefficient Table
+crit_val <- qnorm(0.975)
+
+rq2_table <- data.frame(
+  term      = rownames(ctable_robust),
+  estimate  = ctable_robust[, "Value"],
+  std.error = ctable_robust[, "Std. Error"],
+  statistic = ctable_robust[, "t value"],
+  p.value   = ctable_robust[, "p value"],
+  stringsAsFactors = FALSE
+) %>%
+  mutate(
+    conf.low  = estimate - crit_val * std.error,
+    conf.high = estimate + crit_val * std.error
+  ) %>%
+  mutate(
+    term = dplyr::recode(
+      term,
+      "generosity_index"               = "Generosity index",
+      "freedom_index"                  = "Freedom index",
+      "lifeexp_index"                  = "Life expectancy index",
+      "gdp_index"                      = "GDP per capita index",
+      "family_index"                   = "Family index",
+      "trust_index"                    = "Trust index",
+      "year"                           = "Year",
+      "generosity_index:freedom_index" = "Generosity × Freedom",
+      "Low|Medium"                     = "Cutpoint: Low | Medium",
+      "Medium|High"                    = "Cutpoint: Medium | High"
+    ),
+    p.value   = ifelse(p.value < 0.001, "<0.001",
+                       sprintf("%.3f", round(p.value, 3))),
+    estimate  = sprintf("%.3f", round(estimate, 3)),
+    std.error = sprintf("%.3f", round(std.error, 3)),
+    statistic = sprintf("%.3f", round(statistic, 3)),
+    conf.low  = sprintf("%.3f", round(conf.low, 3)),
+    conf.high = sprintf("%.3f", round(conf.high, 3))
+  )
+
+colnames(rq2_table) <- c(
+  "Variable", "Estimate", "Std Error", "t-value", "p-value",
+  "2.5% CI", "97.5% CI"
+)
+
+rownames(rq2_table) <- NULL
+
+kable(
+  rq2_table,
+  caption = "Ordinal logistic regression model for regional happiness group (region-clustered robust SEs)",
+  booktabs = TRUE,
+  longtable = FALSE,
+  linesep  = "",
+  align    = c("l", "c", "c", "c", "c", "c", "c")
+) %>%
+  kableExtra::kable_styling(full_width = FALSE, font_size = 10)
+
+```
+
+Table 2 summarizes the estimated coefficients. Generosity shows a strong positive association with regional happiness (estimate = 1.72, p \< 0.001), and freedom shows a negative association (estimate = –0.98, p \< 0.001). Life expectancy, family index, trust, are all positively associated with being in a higher happiness group and are statistically significant, but GDP per capita has no statistically significant effect at any normal level (p = .35).
+
+The interaction between generosity and freedom is negative and highly significant (estimate = –1.90, p \< 0.001), indicating that the effect of generosity depends strongly on the level of freedom within a country. Because generosity and freedom interact, the main effects cannot be interpreted in isolation. They describe the effect of each predictor only when the other equals zero, which is not substantively meaningful for this application.
+
+```{r}
+beta_names <- names(coef(rq2_model))
+se_beta    <- se_robust_all[beta_names]
+
+z_crit <- qnorm(0.975)
+
+ci_low  <- coef(rq2_model) - z_crit * se_beta
+ci_high <- coef(rq2_model) + z_crit * se_beta
+
+exp_coefs_robust <- exp(cbind(
+  OR      = coef(rq2_model),
+  `2.5 %` = ci_low,
+  `97.5 %`= ci_high
+))
+
+rq2_or_df <- data.frame(
+  term     = rownames(exp_coefs_robust),
+  OR       = exp_coefs_robust[, "OR"],
+  conf.low = exp_coefs_robust[, "2.5 %"],
+  conf.high= exp_coefs_robust[, "97.5 %"],
+  stringsAsFactors = FALSE
+)
+
+p_df <- data.frame(
+  term    = rownames(ctable_robust),
+  p.value = ctable_robust[, "p value"],
+  stringsAsFactors = FALSE
+) %>%
+  filter(term %in% rq2_or_df$term)
+
+rq2_or_table <- rq2_or_df %>%
+  left_join(p_df, by = "term") %>%
+  mutate(
+    term = dplyr::recode(
+      term,
+      "generosity_index"               = "Generosity index",
+      "freedom_index"                  = "Freedom index",
+      "lifeexp_index"                  = "Life expectancy index",
+      "gdp_index"                      = "GDP per capita index",
+      "family_index"                   = "Family index",
+      "trust_index"                    = "Trust index",
+      "year"                           = "Year",
+      "generosity_index:freedom_index" = "Generosity × Freedom"
+    ),
+    p.value  = ifelse(p.value < 0.001, "<0.001",
+                      sprintf("%.3f", round(p.value, 3))),
+    OR       = sprintf("%.3f", round(OR, 3)),
+    conf.low = sprintf("%.3f", round(conf.low, 3)),
+    conf.high= sprintf("%.3f", round(conf.high, 3))
+  )
+
+colnames(rq2_or_table) <- c(
+  "Variable", "Odds Ratio", "2.5% CI", "97.5% CI", "p-value"
+)
+
+rownames(rq2_or_table) <- NULL
+
+kable(
+  rq2_or_table,
+  caption = "Odds ratios from ordinal logistic regression for regional happiness group (region-clustered robust SEs)",
+  booktabs = TRUE,
+  longtable = FALSE,
+  linesep  = "",
+  align    = c("l", "c", "c", "c", "c")
+) %>%
+  kable_styling(full_width = FALSE, font_size = 10)
+```
+
+Table 3 reports the odds ratios. A one-unit increase in generosity is associated with substantially higher odds of being in a happier regional group (OR = 5.57, 95% CI: 5.26, 5.90), while freedom is associated with lower odds (OR = 0.37, 95% CI: 0.29, 0.49). Life expectancy, family support, and trust all have odds ratios whose confidence intervals lie fully above 1, indicating significant positive associations, whereas GDP per capita is not significant because its 95% CI includes 1. The generosity × freedom interaction has an OR of 0.15 (95% CI: 0.14, 0.16), meaning that the positive association between generosity and happiness weakens as the level of freedom increases and can even become negative if freedom is very high.
+
+Taken together, these results indicate that generosity and freedom jointly influence regional well-being, and neither predictor should be interpreted independently of the other. In regions with higher freedom, generosity weakens the likelihood of being classified into a higher happiness group, and in regions with lower freedom, the effect of generosity becomes stronger. This pattern suggests that generosity yields stronger well-being returns in environments where freedom is limited, while other factors are more important in societies that are already free.
+
+### **Model Assessment**
+
+Standard diagnostic procedures for ordinal logistic regression were conducted. The predicted-probability curves generated with *ggeffects* are smooth and do not exhibit irregular crossings, which suggests that the proportional-odds assumption is not visibly violated. Figure 3 shows these predicted probabilities for each happiness group across the range of generosity at three representative levels of freedom.
+
+```{r, fig.cap = "Predicted Probabilities of Regional Happiness Group",fig.width = 5, fig.height = 3}
+ggeffects::predict_response(
+  rq2_model,
+  terms = c("generosity_index [all]", "freedom_index")
+) |>
+  plot() +
+  labs(
+    title = "Predicted Probabilities of Regional Happiness Group",
+    x = "Generosity Index",
+    y = "Predicted Probability",
+    color = "Freedom Index",
+    fill  = "Freedom Index"
+  ) +
+  theme_bw(base_size = 8,base_family = "serif") +
+  theme(
+    text = element_text( size = 8),
+    plot.title = element_text(face = "bold")
+  )
+
+```
+
+The plot illustrates a consistent interaction pattern: for the Low happiness group, higher generosity is associated with decreasing predicted probabilities across all freedom levels, although the decline is steeper when freedom is lower. This means that for countries in the Low happiness group, generosity decreases the log odds of being in the Low happiness group, and this effect is strongest in places with a low level of freedom. For the Medium group, increasing generosity raises the predicted probability of classification into this category, and the effect is strongest at lower levels of freedom. The High happiness group shows small but positive changes in predicted probability as generosity increases, with the three freedom levels producing broadly comparable trends. Although the magnitude of change is modest for the High group, the general pattern reinforces that generosity behaves differently depending on both the level of freedom and the baseline happiness classification. These curves’ slopes support the previous assertion that generosity has the highest impact on probabilities of being in a specific happiness group when freedom is lower.
+
+```{r}
+mf <- model.frame(rq2_model)
+truth <- mf$Region_Happy_Group
+pred_class <- predict(rq2_model)
+
+truth <- factor(truth, levels = levels(truth))
+pred_class <- factor(pred_class, levels = levels(truth))
+
+cm <- confusionMatrix(pred_class, truth)
+cm_counts <- as.data.frame.matrix(cm$table)
+
+cm_table <- cm_counts %>%
+  mutate(Prediction = rownames(cm_counts)) %>%
+  dplyr::select(Prediction, Low, Medium, High)
+
+kable(
+  cm_table,
+  caption = "Confusion Matrix for Ordinal Logistic Regression (Regional Happiness Group)",
+  booktabs = TRUE,
+  row.names = FALSE,
+  align = c("l", "c", "c", "c")
+) %>%
+  kable_styling(full_width = FALSE, font_size = 10)
+```
+
+The confusion matrix indicates that the model performs reasonably well as a predictive tool, achieving an overall accuracy of 73.6%. Sensitivity is strongest for the Low (0.76) and Medium (0.73) categories, and slightly lower for the High category (0.66). These results are expected given the relatively smaller number of High-group observations and the inherent difficulty of predicting outcomes with limited class representation. While predictive accuracy is not the primary aim of this analysis, these metrics suggest that the model captures meaningful structure in the data and is reasonably capable of distinguishing between the three regional happiness groups.
+
+The diagnostics and predicted-probability curves support the appropriateness of the ordinal logistic model and confirm the presence of a meaningful interaction between generosity and freedom. The model consistently shows that the relationship between generosity and happiness varies across freedom contexts, even though the strength and direction of the effect differ across the Low, Medium, and High happiness categories.
+
+## **Limitations and Next Steps**
+
+### **Data Limitations**
+
+-   Unbalanced reporting: The World Happiness Report includes data from approximately 155 countries between 2015 and 2019, but many countries reported inconsistently. Specifically, 29 countries did not provide complete data for all five years.
+
+-   Selection bias: The missing data for the 29 countries appear non-random, as many were located in Sub-Saharan Africa. Deciding to include all available observations, instead of removing all observations of countries that did not report data for all 5 years, may introduce bias into the data. 
+
+-   Upward bias: The absence of reports from countries with missing data may lead to an upward bias in average happiness scores, potentially misclassifying struggling regions into higher happiness categories.
+
+-   Methodological decision: Despite the limitations discussed above, keeping all observations was preferable to the deletion of countries that do not report all years, as cutting the 29 countries’ observations would introduce its own form of selection bias by excluding nations that may already be marginalized in global data collection, while greatly reducing the sample size. 
+
+### **Modeling Limitations**
+
+-   Linearity assumption (Model 1): The model assumes a constant linear interaction between life expectancy and GDP, but the true relationship may be non-linear or threshold-based (e.g., life expectancy may matter more only after a certain GDP level is reached) 
+
+-   Unexplained variance (Model 1): While the model explains a substantial portion of the variation in national happiness (adjusted R\^2 = 0.781), approximately 22% of the variance remains unexplained. This suggests that happiness is shaped by additional structural, cultural, or institutional factors not included in the model, raising the possibility of omitted variable bias and indicating that GDP and life expectancy alone cannot fully capture national well-being. 
+
+### **Next Steps and Improvements**
+
+-   Incorporate longitudinal data: Our current analysis uses data from 2015-2019, but collecting time-series data over a longer period of time would allow us to track changes and trends in national happiness more effectively. 
+
+-   Add missing predictors: Since approximately 22% of the variance in Model 1 remains unexplained, future work should incorporate additional social, cultural, and institutional variables that operate beyond GDP and life expectancy.
+
+-   Compare Results From Different Data: To address unbalanced reporting, future analyses should compare results from the full dataset with (1) a balanced panel including only countries with complete reporting, and (2) a country-level averaged dataset. This would help assess the robustness of findings and quantify the impact of missing years.
+
+    \newpage
+
+## **References**
+
+Helliwell, J. F., Layard, R., Sachs, J. D., De Neve, J.-E., Aknin, L. B., & Wang, S. (Eds.). (2025). World Happiness Report 2025. Wellbeing Research Centre, University of Oxford.
+
+Roser, M., & Ortiz-Ospina, E. (2024). Happiness and life satisfaction. Our World in Data.
+
+[https://ourworldindata.org/happiness-and-life-satisfaction](https://ourworldindata.org/happiness-and-life-satisfaction?utm_source=chatgpt.com).
+
+World Happiness Report. (2024). World Happiness Report 2024. Sustainable Development Solutions Network.<https://worldhappiness.report/>.
+
+World Happiness Report.(2019).Kaggle.<https://www.kaggle.com/datasets/unsdsn/world-happiness>
